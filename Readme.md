@@ -132,7 +132,7 @@ your private documents. RAG solves this by:
 
 ---
 
-## 👨Author
+## Author
 
 Built as part of a 30-day AI Engineer bootcamp.
 Connect with me on [LinkedIn](inkedin.com/in/salman-ahmad-dev/)
