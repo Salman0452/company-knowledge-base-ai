@@ -7,6 +7,8 @@ from langchain_chroma import Chroma
 
 load_dotenv()
 
+
+
 # ── 1. LOAD ALL PDFs MANUALLY WITH METADATA ────────────────────────────────────
 # We load each PDF individually so we can tag each chunk with its document name
 # This is better than DirectoryLoader when you need metadata control

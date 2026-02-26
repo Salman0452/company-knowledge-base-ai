@@ -9,6 +9,13 @@ from langchain_classic.memory import ConversationBufferWindowMemory
 
 load_dotenv()
 
+# This works both locally (.env) and on Streamlit Cloud (st.secrets)
+def get_secret(key):
+    try:
+        return st.secrets[key]
+    except:
+        return os.getenv(key)
+
 # ── PAGE CONFIG ────────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="Company Knowledge Base",
@@ -22,7 +29,7 @@ st.title("Company Knowledge Base AI")
 def load_vectorstore():
     embeddings = CohereEmbeddings(
         model="embed-english-v3.0",
-        cohere_api_key=os.getenv("COHERE_API_KEY")
+        cohere_api_key=get_secret("COHERE_API_KEY")
     )
     return Chroma(
         persist_directory="chroma_db",
@@ -34,7 +41,7 @@ def load_llm():
         return ChatGroq(
             model="llama-3.3-70b-versatile",
             temperature=0.2,        # low temp = factual, consistent answers
-            groq_api_key=os.getenv("GROQ_API_KEY")
+            groq_api_key=get_secret("GROQ_API_KEY")
         )
 vectorstore = load_vectorstore()
 llm = load_llm()
