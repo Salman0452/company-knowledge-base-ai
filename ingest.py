@@ -7,51 +7,55 @@ from langchain_chroma import Chroma
 
 load_dotenv()
 
-# ── 1. LOAD DOCUMENTS ──────────────────────────────────────────────────────────
-# DirectoryLoader loads ALL PDFs in the data/ folder automatically
-loader = DirectoryLoader(
-    path="data/",
-    glob="**/*.pdf",
-    loader_cls=PyPDFLoader
-)
+# ── 1. LOAD ALL PDFs MANUALLY WITH METADATA ────────────────────────────────────
+# We load each PDF individually so we can tag each chunk with its document name
+# This is better than DirectoryLoader when you need metadata control
 
-print("Loading documents...")
-documents = loader.load()
-print(f"Loaded {len(documents)} pages")
-
-# ── 2. CHUNK THE DOCUMENTS ─────────────────────────────────────────────────────
-# You already understand chunking from Week 1.
-# RecursiveCharacterTextSplitter tries to split on paragraphs first,
-# then sentences, then words — it's smarter than CharacterTextSplitter.
+DATA_DIR = "data/"
+all_chunks = []
 splitter = RecursiveCharacterTextSplitter(
-    chunk_size=500,        # characters per chunk
-    chunk_overlap=50,      # overlap so context isn't lost at boundaries
-    separators=["\n\n", "\n", " ", ""]  # tries these in order
+    chunk_size = 500,
+    chunk_overlap = 75
 )
+for filename in os.listdir(DATA_DIR):
+    if filename.endswith(".pdf"):
+        filepath = os.path.join(DATA_DIR, filename)
+        print(f"Loading {filename}...")
 
-chunks = splitter.split_documents(documents)
-print(f"Split into {len(chunks)} chunks")
+        loader = PyPDFLoader(filepath)
+        pages = loader.load()
 
-# ── 3. CREATE EMBEDDINGS ───────────────────────────────────────────────────────
-# This model runs locally — no API key, no cost, no rate limits.
-# First run will download ~90MB model. Subsequent runs use cache.
-print("Loading embedding model (first run downloads ~90MB)...")
-embedding_model = CohereEmbeddings(
+        chunks = splitter.split_documents(pages)
+
+        # Tag each chunk with clean document name — this enables filtering later
+        doc_name = filename.replace(".pdf", "").replace("-", " ").replace("_", " ")
+        for chunk in chunks:
+            chunk.metadata["doc_name"] = doc_name
+            chunk.metadata["filename"] = filename
+        
+        print(f"-> {len(chunks)} chunks")
+        all_chunks.extend(chunks)
+
+print(f"\n Totall chunks across all documents: {len(all_chunks)}")
+
+# ── 2. EMBED AND STORE ─────────────────────────────────────────────────────────
+embeddings = CohereEmbeddings(
     model="embed-english-v3.0",
     cohere_api_key=os.getenv("COHERE_API_KEY")
 )
 
-# ── 4. STORE IN CHROMADB ───────────────────────────────────────────────────────
-# Chroma.from_documents does THREE things at once:
-#   a) converts each chunk to a vector using embedding_model
-#   b) stores the vector in ChromaDB
-#   c) stores the original text alongside the vector (for retrieval)
-print("Creating vector store...")
+# Delete old chroma_db and rebuild fresh
+import shutil
+if os.path.exists("chroma_db"):
+    shutil.rmtree("chroma_db")
+    print("Cleared old vector store")
+
 vectorstore = Chroma.from_documents(
-    documents=chunks,
-    embedding=embedding_model,
-    persist_directory="chroma_db"   # saves to disk
+    documents=all_chunks,
+    embedding=embeddings,
+    persist_directory="chroma_db"
 )
 
-print(f"Done! {len(chunks)} chunks embedded and stored in chroma_db/")
-print("You can now run app.py to start querying.")
+
+print(f"Stored in ChromaDB successfully")
+print(f"Documents ingested: {set([c.metadata['doc_name'] for c in all_chunks])}")
