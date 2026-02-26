@@ -1,7 +1,7 @@
 [![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://company-knowledge-base-ai-8qx94fsufxkhehkmmi9dka.streamlit.app/)
 
 ## Live Demo
-[Try it here](https://yourapp.streamlit.app)
+[Try it here](https://company-knowledge-base-ai-8qx94fsufxkhehkmmi9dka.streamlit.app/)
 
 # Company Knowledge Base AI
 
