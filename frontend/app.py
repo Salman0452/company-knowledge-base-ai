@@ -1,22 +1,15 @@
-import os
+import uuid
+import requests
 import streamlit as st
-from dotenv import load_dotenv
-from langchain_chroma import Chroma
-from langchain_cohere import CohereEmbeddings
-from langchain_groq import ChatGroq
-from langchain_classic.chains import ConversationalRetrievalChain
-from langchain_classic.memory import ConversationBufferWindowMemory
+import os
+import time
 
-load_dotenv()
 
-# This works both locally (.env) and on Streamlit Cloud (st.secrets)
-def get_secret(key):
-    try:
-        return st.secrets[key]
-    except:
-        return os.getenv(key)
+# ── CONFIG ─────────────────────────────────────────────────────────────────────
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 
-# ── PAGE CONFIG ────────────────────────────────────────────────────────────────
+
+# ── PAGE SETUP ─────────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="Company Knowledge Base",
     page_icon="🏨",
@@ -24,117 +17,168 @@ st.set_page_config(
 
 st.title("Company Knowledge Base AI")
 
-# ── LOAD RESOURCES ─────────────────────────────────────────────────────────────
-@st.cache_resource
-def load_vectorstore():
-    embeddings = CohereEmbeddings(
-        model="embed-english-v3.0",
-        cohere_api_key=get_secret("COHERE_API_KEY")
-    )
-    return Chroma(
-        persist_directory="chroma_db",
-        embedding_function=embeddings
-    )
-
-@st.cache_resource
-def load_llm():
-        return ChatGroq(
-            model="llama-3.3-70b-versatile",
-            temperature=0.2,        # low temp = factual, consistent answers
-            groq_api_key=get_secret("GROQ_API_KEY")
-        )
-vectorstore = load_vectorstore()
-llm = load_llm()
-
-# ── SIDEBAR — Document Filter ──────────────────────────────────────────────────
-st.sidebar.title("Filter Documents")
-
-# Get all unique document names from ChromaDB metadata
-all_docs = vectorstore.get()["metadatas"]
-doc_names = sorted(set(m["doc_name"] for m in all_docs if "doc_name" in m))
-
-selected_docs = st.sidebar.multiselect(
-    "Search in:",
-    options=doc_names,
-    default=doc_names,
-    help="Select which documents to search"
-)
-
-st.sidebar.markdown("---")
-st.sidebar.caption(f"{len(doc_names)} documents loaded")
-
 # ── SESSION STATE ──────────────────────────────────────────────────────────────
+# session_id — unique per browser session, sent to FastAPI so it tracks memory
+# messages   — full chat history for display
+# doc_names  — list of docs currently in ChromaDB (fetched from backend)
+
+if "session_id" not in st.session_state:
+    st.session_state.session_id = str(uuid.uuid4())
+
 if "messages" not in st.session_state:
     st.session_state.messages = []
-if "memory" not in st.session_state:
-    st.session_state.memory = ConversationBufferWindowMemory(
-        k=3,
-        memory_key="chat_history",
-        return_messages=True,
-        output_key="answer"
-    )
 
-# ── DISPLAY CHAT HISTORY ───────────────────────────────────────────────────────
+if "doc_names" not in st.session_state:
+    st.session_state.doc_names = []
+
+def fetch_documents():
+    """Ask FastAPI for the current list of document names."""
+    for attempt in range(3):  # try 3 times
+        try:
+            res = requests.get(f"{BACKEND_URL}/documents", timeout=15)
+            if res.status_code == 200:
+                return res.json()["documents"]
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
+            if attempt < 2:
+                time.sleep(3)  # wait 3 seconds before retrying
+            else:
+                st.warning("Backend not ready yet. Please refresh the page.")
+    return []
+
+
+# Load document list on startup (and after uploads)
+if not st.session_state.doc_names:
+    st.session_state.doc_names = fetch_documents()
+
+# ── SIDEBAR ────────────────────────────────────────────────────────────────────
+st.sidebar.title("Document Manager")
+
+# ── PDF UPLOAD ─────────────────────────────────────────────────────────────────
+st.sidebar.subheader("Upload New PDF")
+uploaded_file = st.sidebar.file_uploader(
+    "Choose a PDF file",
+    type=["pdf"],
+    help="Upload any PDF — it will be ingested and searchable immediately"
+)
+
+if uploaded_file is not None:
+    if st.sidebar.button("Ingest PDF", type="primary"):
+        with st.sidebar:
+            with st.spinner(f"Ingesting {uploaded_file.name}..."):
+                try:
+                    res = requests.post(
+                        f"{BACKEND_URL}/upload",
+                        files={"file": (uploaded_file.name, uploaded_file.getvalue(), "application/pdf")},
+                        timeout=60   # ingestion can take time for large PDFs
+                    )
+                    if res.status_code == 200:
+                        data = res.json()
+                        st.success(f"{data['message']}")
+                        st.caption(f"{data['chunks_added']} chunks added")
+                        # Refresh document list after successful upload
+                        st.session_state.doc_names = data["total_docs"]
+                        st.rerun()
+                    else:
+                        st.error(f"Upload failed: {res.json().get('detail', 'Unknown error')}")
+                except requests.exceptions.ConnectionError:
+                    st.error("Cannot connect to backend.")
+
+st.sidebar.markdown("---")
+
+# ── DOCUMENT FILTER ────────────────────────────────────────────────────────────
+st.sidebar.subheader("Filter Documents")
+
+doc_names = st.session_state.doc_names
+
+if doc_names:
+    selected_docs = st.sidebar.multiselect(
+        "Search in:",
+        options=doc_names,
+        default=doc_names,
+        help="Select which documents to search"
+    )
+    st.sidebar.caption(f"{len(doc_names)} document(s) loaded")
+else:
+    selected_docs = []
+    st.sidebar.info("No documents yet. Upload a PDF above.")
+
+st.sidebar.markdown("---")
+
+# ── DELETE DOCUMENT ────────────────────────────────────────────────────────────
+if doc_names:
+    st.sidebar.subheader("Remove Document")
+    doc_to_delete = st.sidebar.selectbox("Select document to remove:", options=[""] + doc_names)
+    if doc_to_delete and st.sidebar.button("Delete", type="secondary"):
+        with st.sidebar:
+            with st.spinner("Deleting..."):
+                try:
+                    res = requests.delete(
+                        f"{BACKEND_URL}/documents/{doc_to_delete}",
+                        timeout=10
+                    )
+                    if res.status_code == 200:
+                        st.success(f"Deleted '{doc_to_delete}'")
+                        st.session_state.doc_names = fetch_documents()
+                        st.rerun()
+                    else:
+                        st.error(res.json().get("detail", "Delete failed"))
+                except requests.exceptions.ConnectionError:
+                    st.error("Cannot connect to backend.")
+
+# ── CHAT HISTORY DISPLAY ───────────────────────────────────────────────────────
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# ── HANDLE INPUT ───────────────────────────────────────────────────────────────
-if prompt := st.chat_input("Ask about company policies..."):
+# ── HANDLE CHAT INPUT ──────────────────────────────────────────────────────────
+if not doc_names:
+    st.info("Upload a PDF from the sidebar to get started.")
+else:
+    if prompt := st.chat_input("Ask about your documents..."):
 
-    st.session_state.messages.append({"role": "user", "content":prompt})
-    with st.chat_message("user"):
-        st.markdown(prompt)
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
 
-    with st.chat_message("assistant"):
-        with st.spinner("Searching..."):
-            # Build retriever with metadata filter if specific docs selected
-            if selected_docs and len(selected_docs) < len(doc_names):
-                # Filter ChromaDB to only search selected documents
-                retriever = vectorstore.as_retriever(
-                    search_type = "similarity",
-                    search_kwargs = {
-                        "k": 4,
-                        "filter": {"doc_name": {"$in": selected_docs}}
-                    }
-                )
-            else:
-                # No filter — search everything
-                retriever = vectorstore.as_retriever(
-                    search_type="similarity",
-                    search_kwargs={"k": 4}
-                )
-            
-            chain = ConversationalRetrievalChain.from_llm(
-                llm=llm,
-                retriever=retriever,
-                memory=st.session_state.memory,
-                return_source_documents=True,
-                verbose=False
-            )
+        with st.chat_message("assistant"):
+            with st.spinner("Searching..."):
+                try:
+                    res = requests.post(
+                        f"{BACKEND_URL}/query",
+                        json={
+                            "question": prompt,
+                            "session_id": st.session_state.session_id,
+                            "selected_docs": selected_docs
+                        },
+                        timeout=30
+                    )
 
-            # This is the system prompt — controls how the LLM behaves
-            # We inject it by modifying the question
-            augmented_prompt = f"""You are a company policy assistant. 
-Answer based ONLY on the provided context. 
-If the answer is not in the context, say: 'I could not find this in the selected documents.'
-Do not make up information.
+                    if res.status_code == 200:
+                        data = res.json()
+                        answer = data["answer"]
+                        sources = data["sources"]
 
-Question: {prompt}"""
-            
-            result = chain.invoke({"question": augmented_prompt})
-            answer = result["answer"]
-            source_docs = result["source_documents"]
-        
-        st.markdown(answer)
+                        st.markdown(answer)
 
-        # Show sources so users can verify — this builds trust
-        with st.expander("Sources"):
-            for i, doc in enumerate(source_docs):
-                st.markdown(f"**{doc.metadata.get('doc_name', 'Unknown')}** — Page {doc.metadata.get('page', '?')}")
-                st.caption(doc.page_content[:200] + "...")
-        
-    st.session_state.messages.append({"role": "assistant", "content": answer})
+                        # Show sources — same as your original app
+                        with st.expander("Sources"):
+                            for src in sources:
+                                st.markdown(f"**{src['doc_name']}** — Page {src['page']}")
+                                st.caption(src["preview"])
+
+                        st.session_state.messages.append({
+                            "role": "assistant",
+                            "content": answer
+                        })
+
+                    else:
+                        error_msg = res.json().get("detail", "Something went wrong.")
+                        st.error(error_msg)
+
+                except requests.exceptions.ConnectionError:
+                    st.error("Cannot reach the backend. Is FastAPI running?")
+                except requests.exceptions.Timeout:
+                    st.error("Request timed out. The PDF might be large — try again.")
 
 
 

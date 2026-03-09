@@ -1,0 +1,28 @@
+# Python
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Environment — NEVER copy secrets into Docker image
+.env
+
+# Git
+.git/
+.gitignore
+
+# ChromaDB local data — Docker uses named volume instead
+chroma_db/
+
+# Mac junk
+.DS_Store
+
+# Data folder — user uploads via UI, not baked into image
+data/
+
+# Docs
+README.md
+*.md

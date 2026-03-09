@@ -1,0 +1,34 @@
+# ── API & SERVER ──────────────────────────────────────────────────────────────
+fastapi==0.111.0
+uvicorn==0.30.1
+python-multipart==0.0.9
+starlette==0.37.2
+
+# ── FRONTEND ──────────────────────────────────────────────────────────────────
+streamlit==1.54.0
+
+# ── LLM & EMBEDDINGS ──────────────────────────────────────────────────────────
+groq>=0.30.0,<1.0.0
+cohere==5.20.7
+langchain==1.2.10
+langchain-classic==1.0.1
+langchain-community==0.4.1
+langchain-core==1.2.17
+langchain-cohere==0.5.0
+langchain-groq==1.1.2
+langchain-text-splitters==1.1.1
+
+# ── VECTOR DATABASE ───────────────────────────────────────────────────────────
+chromadb==1.5.2
+langchain-chroma==1.1.0
+
+# ── PDF PROCESSING ────────────────────────────────────────────────────────────
+pypdf==6.7.5
+
+# ── UTILITIES ─────────────────────────────────────────────────────────────────
+python-dotenv==1.0.1
+pydantic==2.7.4
+pydantic-settings==2.13.1
+requests==2.32.5
+httpx==0.27.0
+
