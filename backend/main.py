@@ -289,5 +289,3 @@ def delete_document(doc_name: str):
         "message": f"Deleted '{doc_name}' ({len(ids_to_delete)} chunks removed)",
         "deleted_chunks": len(ids_to_delete)
     }
-
-
