@@ -1,149 +1,175 @@
 # Company Knowledge Base AI
 
-> Chat with your company documents using natural language — powered by 
-> RAG, semantic search, and Groq LLaMA 3.3 70B.
+> A production-ready RAG (Retrieval-Augmented Generation) system that lets you upload any PDF and query it using natural language — powered by FastAPI, ChromaDB, Cohere Embeddings, and Groq LLM.
 
-[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://company-knowledge-base-ai-8qx94fsufxkhehkmmi9dka.streamlit.app/)
-![Python](https://img.shields.io/badge/Python-3.10+-blue)
-![LangChain](https://img.shields.io/badge/LangChain-0.2+-green)
-
-## Live Demo
-[Try it here](https://company-knowledge-base-ai-8qx94fsufxkhehkmmi9dka.streamlit.app/)
+![Python](https://img.shields.io/badge/Python-3.12-blue)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.111-green)
+![Docker](https://img.shields.io/badge/Docker-Containerized-blue)
+![LangChain](https://img.shields.io/badge/LangChain-1.2-orange)
 
 ---
 
-## The Problem It Solves
+## What This Does
 
-Traditional keyword search fails when users don't use exact words 
-from the document. This app uses vector embeddings to understand 
-**meaning**, not just keywords.
+Upload any PDF document and immediately ask questions about it in natural language. The system retrieves the most relevant chunks from your documents and uses an LLM to generate accurate, grounded answers — with source citations so you can verify every response.
 
-Example:
-- User asks: *"Can I work from another city?"*
-- Document says: *"Employee relocation policy..."*
-- Keyword search: No match
-- This app: Finds it instantly
+**Real-world use cases:**
+- Company policy Q&A for HR teams
+- Legal document analysis
+- Research paper querying
+- Technical documentation assistant
 
 ---
 
 ## Architecture
+
 ```
-PDF Documents
-     ↓
-LangChain PDF Loader
-     ↓
-RecursiveCharacterTextSplitter (chunk_size=500, overlap=75)
-     ↓
-Cohere Embeddings (embed-english-v3.0)
-     ↓
-ChromaDB Vector Store (persisted on disk)
-     ↓
-User Query → Cohere Embeddings → Similarity Search (top 4 chunks)
-     ↓
-Groq LLaMA 3.3 70B → Answer with Sources
+User uploads PDF
+      ↓
+FastAPI /upload endpoint
+      ↓
+PDF → chunks (500 tokens) → Cohere embeddings → ChromaDB
+      ↓
+User asks question via Streamlit
+      ↓
+FastAPI /query endpoint
+      ↓
+ChromaDB similarity search → Top 4 relevant chunks
+      ↓
+Groq LLaMA 3.3 70B generates answer with sources
+      ↓
+Response displayed with page citations
+```
+
+---
+
+## Tech Stack
+
+| Layer | Technology | Purpose |
+|---|---|---|
+| Frontend | Streamlit | Chat interface + PDF upload UI |
+| Backend | FastAPI | REST API, business logic |
+| LLM | Groq (LLaMA 3.3 70B) | Answer generation |
+| Embeddings | Cohere (embed-english-v3.0) | Semantic search |
+| Vector DB | ChromaDB | Document storage & retrieval |
+| Orchestration | LangChain | RAG pipeline |
+| Container | Docker + docker-compose | Deployment |
+
+---
+
+## Quick Start
+
+### Prerequisites
+- Docker & docker-compose installed
+- Groq API key (free at [console.groq.com](https://console.groq.com))
+- Cohere API key (free at [cohere.com](https://cohere.com))
+
+### 1. Clone the repo
+```bash
+git clone https://github.com/Salman0452/company-knowledge-base-ai.git
+cd company-knowledge-base-ai
+```
+
+### 2. Set up environment variables
+```bash
+cp .env.example .env
+# Edit .env and add your API keys
+```
+
+### 3. Run with Docker
+```bash
+docker-compose up --build
+```
+
+### 4. Open the app
+- **Streamlit UI:** http://localhost:8501
+- **FastAPI docs:** http://localhost:8000/docs
+
+---
+
+## API Endpoints
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/` | Health check |
+| GET | `/documents` | List all ingested documents |
+| POST | `/upload` | Upload and ingest a PDF |
+| POST | `/query` | Query documents with natural language |
+| DELETE | `/documents/{doc_name}` | Remove a document |
+
+### Example query request
+```json
+POST /query
+{
+  "question": "What is the remote work policy?",
+  "session_id": "user-123",
+  "selected_docs": ["company handbook"]
+}
+```
+
+### Example response
+```json
+{
+  "answer": "According to the company handbook, employees may work remotely up to 3 days per week...",
+  "sources": [
+    {
+      "doc_name": "company handbook",
+      "page": 12,
+      "preview": "Remote work policy: Employees are eligible..."
+    }
+  ]
+}
 ```
 
 ---
 
 ## Features
 
-- **Semantic Search** — finds meaning, not just keywords
-- **Multi-Document Support** — ingest unlimited PDFs
-- **Metadata Filtering** — search specific documents only
-- **Source Transparency** — every answer shows exactly which 
-  document chunks were used
-- **Hallucination Prevention** — says "I don't know" when 
-  answer isn't in documents
-- **Conversation Memory** — remembers last 3 turns
-- **100% Free APIs** — Groq + Cohere + ChromaDB
-
----
-
-## Tech Stack
-
-| Layer | Technology |
-|-------|-----------|
-| LLM | Groq API — LLaMA 3.3 70B |
-| Embeddings | Cohere embed-english-v3.0 |
-| Vector DB | ChromaDB |
-| Framework | LangChain |
-| UI | Streamlit |
-| Deployment | Streamlit Community Cloud |
+- **Dynamic PDF upload** — no hardcoded documents, upload anything at runtime
+- **Multi-document support** — ingest multiple PDFs and filter by document
+- **Conversation memory** — remembers last 3 exchanges per session
+- **Source citations** — every answer shows which page it came from
+- **Document management** — upload and delete documents via UI
+- **Production-ready** — fully containerized with Docker
 
 ---
 
 ## Project Structure
+
 ```
 company-knowledge-base-ai/
-│
-├── ingest.py        # Document loading, chunking, embedding pipeline
-├── retriever.py     # Vector similarity search and testing
-├── app.py           # Streamlit UI + RAG chain
-│
-├── data/            # Place your PDF documents here
-├── chroma_db/       # Auto-generated vector store
-│
-├── requirements.txt
-├── .env.example     # Template for API keys
-└── README.md
+├── backend/
+│   └── main.py          # FastAPI app — all endpoints
+├── frontend/
+│   └── app.py           # Streamlit UI
+├── Dockerfile           # Container definition
+├── docker-compose.yml   # Multi-service orchestration
+├── requirements.txt     # Python dependencies
+└── .env.example         # Environment variable template
 ```
 
 ---
 
-## Run Locally
-```bash
-git clone https://github.com/yourusername/company-knowledge-base-ai
-cd company-knowledge-base-ai
-python -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
-```
+## Key Technical Decisions
 
-Copy `.env.example` to `.env` and add your keys:
-```
-GROQ_API_KEY=your_key_here
-COHERE_API_KEY=your_key_here
-```
-```bash
-# Add your PDFs to data/ folder, then:
-python ingest.py      # build vector store
-streamlit run app.py  # launch app
-```
+**Why ChromaDB over Pinecone?**
+ChromaDB runs locally with zero setup — perfect for self-hosted deployments. No external API calls for vector storage means lower latency and no additional cost.
 
----
+**Why Groq over OpenAI?**
+Groq's hardware delivers significantly faster inference on open-source models like LLaMA 3.3 70B. Free tier is generous enough for production demos.
 
-## Key Learning — Why RAG?
-
-Large language models have a knowledge cutoff and no access to 
-your private documents. RAG solves this by:
-
-1. Converting your documents into searchable vectors
-2. Finding relevant chunks at query time
-3. Passing only those chunks to the LLM as context
-4. Getting a grounded answer — not a hallucination
-
----
-
-## What I'd Add Next
-
-- [ ] Pinecone for hosted vector storage
-- [ ] Document upload directly from UI
-- [ ] Answer confidence scores
-- [ ] Multi-language support
+**Why separate FastAPI + Streamlit instead of one Streamlit app?**
+Separation of concerns — the FastAPI backend can serve any frontend (mobile app, web app, other services). Streamlit is just one client.
 
 ---
 
 ## Author
 
-Built as part of a 30-day AI Engineer bootcamp.
-Connect with me on [LinkedIn](inkedin.com/in/salman-ahmad-dev/)
-```
+**Salman Ahmad** — AI Engineer
+- GitHub: [@Salman0452](https://github.com/Salman0452)
 
 ---
 
-## Step 3 — Add `.env.example`
+## License
 
-Create this file so others can run your project:
-```
-GROQ_API_KEY=your_groq_api_key_here
-COHERE_API_KEY=your_cohere_api_key_here
-GOOGLE_API_KEY=your_google_api_key_here
+MIT License — feel free to use this for your own projects.

@@ -1,0 +1,48 @@
+version: "3.9"
+
+# ── SERVICES ───────────────────────────────────────────────────────────────────
+# Each service = one container
+# They share a network automatically in docker-compose
+
+services:
+
+  # ── BACKEND (FastAPI) ─────────────────────────────────────────────────────
+  backend:
+    build: .                          # Build from Dockerfile in current folder
+    container_name: kb-backend
+    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"                   # host:container — access via localhost:8000
+    volumes:
+      - .:/app                        # Mount your code into container
+      - chroma_data:/app/chroma_db    # Persist ChromaDB between restarts
+    env_file:
+      - .env                          # Load your API keys from .env file
+    restart: unless-stopped           # Auto-restart if it crashes
+
+  # ── FRONTEND (Streamlit) ──────────────────────────────────────────────────
+  frontend:
+    build: .                          # Same image, different command
+    container_name: kb-frontend
+    command: >
+      sh -c "sleep 10 && streamlit run frontend/app.py 
+      --server.port 8501 --server.address 0.0.0.0 --server.headless true"
+    ports:
+      - "8501:8501"                   # Access via localhost:8501
+    volumes:
+      - .:/app                        # Same code mount
+    env_file:
+      - .env
+    depends_on:
+      - backend   
+    environment:
+      # Tell Streamlit to talk to backend container by its service name
+      # Inside Docker network, containers talk via service names not localhost
+      - BACKEND_URL=http://backend:8000
+    restart: unless-stopped
+
+# ── VOLUMES ────────────────────────────────────────────────────────────────────
+# Named volume for ChromaDB — persists even when containers are stopped/deleted
+# Without this, you'd lose all uploaded PDFs every time you restart
+volumes:
+  chroma_data:
