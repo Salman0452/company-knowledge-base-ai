@@ -1,0 +1,87 @@
+# ── WORKFLOW NAME ──────────────────────────────────────────────────────────────
+# This name appears in GitHub Actions tab
+name: CI/CD Pipeline
+
+# ── TRIGGERS ───────────────────────────────────────────────────────────────────
+# When does this workflow run?
+on:
+  push:
+    branches: [company-knowledge-base-v2]        # Run on every push to main branch
+  pull_request:
+    branches: [company-knowledge-base-v2]        # Run on every PR targeting main
+
+# ── JOBS ───────────────────────────────────────────────────────────────────────
+# A workflow has one or more jobs
+# Jobs run in parallel by default, unless you use "needs:"
+jobs:
+
+  # ── JOB 1: TEST ──────────────────────────────────────────────────────────────
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest    # GitHub provides a free Ubuntu VM
+
+    steps:
+      # Step 1: Get your code into the VM
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Step 2: Install Python
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Step 3: Cache pip packages — speeds up workflow on repeated runs
+      # Instead of reinstalling everything each time, it uses cached packages
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      # Step 4: Install your dependencies
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # Step 5: Check code structure is valid
+      # This catches import errors, syntax errors before deploying
+      - name: Validate backend imports
+        run: python -c "import fastapi; import chromadb; import langchain; print('All imports OK')"
+
+      # Step 6: Check FastAPI app loads correctly
+      - name: Validate FastAPI app
+        run: python -c "from backend.main import app; print('FastAPI app loaded OK')"
+        env:
+          COHERE_API_KEY: ${{ secrets.COHERE_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+
+  # ── JOB 2: DEPLOY ─────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy to Railway
+    runs-on: ubuntu-latest
+    needs: test               # Only runs if test job passes
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    # Only deploy on push to main — not on pull requests
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Trigger Railway redeploy via Railway CLI
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      - name: Deploy Backend to Railway
+        run: railway up --service company-knowledge-base-ai
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+
+      - name: Deploy Frontend to Railway
+        run: railway up --service frontend
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+
+      - name: Deployment Success
+        run: echo "Deployed successfully to Railway!"
