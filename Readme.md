@@ -6,6 +6,15 @@
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.111-green)
 ![Docker](https://img.shields.io/badge/Docker-Containerized-blue)
 ![LangChain](https://img.shields.io/badge/LangChain-1.2-orange)
+![Railway](https://img.shields.io/badge/Deployed-Railway-purple)
+
+## Live Demo
+
+| Service | URL |
+|---|---|
+| Frontend (Streamlit) | https://frontend-production-b904.up.railway.app |
+| Backend API (FastAPI) | https://company-knowledge-base-ai-production.up.railway.app |
+| API Documentation | https://company-knowledge-base-ai-production.up.railway.app/docs |
 
 ---
 
