@@ -1,9 +1,12 @@
 import os
 import shutil
 import tempfile
+import time
+import logging
+from datetime import datetime
 from dotenv import load_dotenv
 
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -17,12 +20,50 @@ from langchain_classic.memory import ConversationBufferWindowMemory
 
 load_dotenv()
 
+# ── LOGGING SETUP ──────────────────────────────────────────────────────────────
+# Create logs directory if it doesn't exist
+os.makedirs("logs", exist_ok=True)
+
+# Configure logging — writes to both terminal AND a file
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(message)s",
+    handlers=[
+        logging.StreamHandler(),                        # Terminal output
+        logging.FileHandler("logs/app.log")             # File output
+    ]
+)
+logger = logging.getLogger(__name__)
+
+
+
 # ── APP SETUP ──────────────────────────────────────────────────────────────────
 app = FastAPI(
     title="Company Knowledge Base API",
     description="RAG-powered document Q&A system",
     version="1.0.0"
 )
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """
+    Runs on EVERY request automatically.
+    Logs method, path, and response time.
+    This is how you spot slow endpoints in production.
+    """
+    start_time = time.time()
+    
+    response = await call_next(request)
+    
+    duration = round((time.time() - start_time) * 1000, 2)  # milliseconds
+    
+    logger.info(
+        f"{request.method} {request.url.path} | "
+        f"Status: {response.status_code} | "
+        f"Duration: {duration}ms"
+    )
+    
+    return response
 
 # Allow Streamlit (running on port 8501) to talk to FastAPI (running on port 8000)
 app.add_middleware(
@@ -43,6 +84,29 @@ embeddings = CohereEmbeddings(
     model="embed-english-v3.0",
     cohere_api_key=COHERE_API_KEY
 )
+
+def estimate_cost(input_text: str, output_text: str) -> dict:
+    """
+    Estimates API cost per query.
+    Helps you warn clients before their bill surprises them.
+    
+    Pricing (approximate as of 2025):
+    - Cohere embed-english-v3.0: $0.0001 per 1K tokens
+    - Groq LLaMA 3.3 70B: $0.00059 per 1K input tokens
+    """
+    # Rough token estimation (1 token ≈ 4 characters)
+    input_tokens = len(input_text) / 4
+    output_tokens = len(output_text) / 4
+    
+    cohere_cost = (input_tokens / 1000) * 0.0001
+    groq_cost = ((input_tokens + output_tokens) / 1000) * 0.00059
+    total = round(cohere_cost + groq_cost, 6)
+    
+    return {
+        "input_tokens": int(input_tokens),
+        "output_tokens": int(output_tokens),
+        "estimated_cost_usd": total
+    }
 
 llm = ChatGroq(
     model="llama-3.3-70b-versatile",
